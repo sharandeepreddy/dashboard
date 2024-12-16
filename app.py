@@ -1,124 +1,73 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.metrics import roc_curve, auc, confusion_matrix, precision_recall_curve
-import shap
+import plotly.express as px
 
-# Load data
-@st.cache_resource
+# Load datasets (sampled for performance; in real deployment, optimize or use a database)
+@st.cache_data
 def load_data():
-    st.sidebar.header("Upload Datasets")
-    chartevents_file = st.sidebar.file_uploader("Upload CHARTEVENTS.csv", type=["csv"])
-    d_items_file = st.sidebar.file_uploader("Upload D_ITEMS.csv", type=["csv"])
-    icustays_file = st.sidebar.file_uploader("Upload ICUSTAYS.csv", type=["csv"])
+    chart_events = pd.read_csv("CHARTEVENTS.csv", nrows=1000)
+    d_items = pd.read_csv("D_ITEMS.csv")
+    icu_stays = pd.read_csv("ICUSTAYS.csv")
+    return chart_events, d_items, icu_stays
 
-    if chartevents_file and d_items_file and icustays_file:
-        chartevents = pd.read_csv(chartevents_file)
-        d_items = pd.read_csv(d_items_file)
-        icustays = pd.read_csv(icustays_file)
-        return chartevents, d_items, icustays
-    else:
-        st.warning("Please upload all required datasets.")
-        return None, None, None
+chart_events, d_items, icu_stays = load_data()
 
-# Dashboard
-st.title("Classifier Performance and Explainability Dashboard")
+# Merge datasets for meaningful insights
+merged_data = pd.merge(chart_events, icu_stays, on="icustay_id", how="inner")
+merged_data = pd.merge(merged_data, d_items, on="itemid", how="inner")
 
-# Load data
-chartevents, d_items, icustays = load_data()
+# Sidebar filters
+st.sidebar.title("Filters")
+selected_unit = st.sidebar.multiselect("Select Care Unit", icu_stays["first_careunit"].unique())
+selected_year = st.sidebar.slider("Select Year Range", 2125, 2165, (2130, 2150))
+selected_item = st.sidebar.selectbox("Select Measurement", d_items["label"].unique())
 
-if chartevents is not None and d_items is not None and icustays is not None:
-    # Example of merging datasets (adjust as needed for your analysis)
-    data = icustays.merge(chartevents, on="ICUSTAY_ID", how="inner").merge(d_items, on="ITEMID", how="inner")
+# Filter data based on selections
+filtered_data = merged_data[
+    (merged_data["first_careunit"].isin(selected_unit)) &
+    (pd.to_datetime(merged_data["intime"]).dt.year.between(*selected_year)) &
+    (merged_data["label"] == selected_item)
+]
 
-    # Sidebar inputs
-    st.sidebar.header("User Inputs")
-    selected_threshold = st.sidebar.slider("Prediction Cutoff Probability", 0.0, 1.0, 0.5, 0.01)
-    selected_feature = st.sidebar.selectbox("Select Feature for SHAP Dependence Plot", data.columns[:-1])
-    selected_instance = st.sidebar.number_input("Select Data Point (Index)", 0, len(data) - 1, 0)
+# Main Dashboard
+st.title("ICU Dashboard")
 
-    # Model predictions and probabilities (simulated based on existing data)
-    X = data.drop(columns=["target"])
-    y_true = data["target"]
-    # Simulate prediction probabilities and predictions
-    y_pred_prob = np.random.rand(len(data))  # Replace with actual prediction probabilities if available
-    y_pred = (y_pred_prob >= selected_threshold).astype(int)
+# Key Metrics
+st.subheader("Key Metrics")
+avg_los = filtered_data["los"].mean() if not filtered_data.empty else 0
+total_patients = filtered_data["subject_id"].nunique()
+st.metric("Average Length of Stay (days)", f"{avg_los:.2f}")
+st.metric("Total Patients", total_patients)
 
-    # Model Performance Section
-    st.header("Model Performance")
+# Visualizations
+st.subheader("Visualizations")
 
-    # Confusion Matrix
-    st.subheader("Confusion Matrix")
-    cm = confusion_matrix(y_true, y_pred)
-    st.write(f"Threshold: {selected_threshold}")
-    st.write(cm)
-
-    # ROC AUC Curve
-    st.subheader("ROC AUC Curve")
-    fpr, tpr, _ = roc_curve(y_true, y_pred_prob)
-    roc_auc = auc(fpr, tpr)
-    fig, ax = plt.subplots()
-    ax.plot(fpr, tpr, label=f"AUC = {roc_auc:.2f}")
-    ax.plot([0, 1], [0, 1], linestyle='--', color='gray')
-    ax.set_xlabel("False Positive Rate")
-    ax.set_ylabel("True Positive Rate")
-    ax.set_title("ROC Curve")
-    ax.legend()
-    st.pyplot(fig)
-
-    # Cumulative Precision Curve
-    st.subheader("Cumulative Precision Curve")
-    precision, recall, thresholds = precision_recall_curve(y_true, y_pred_prob)
-    fig, ax = plt.subplots()
-    ax.plot(recall, precision, label="Precision-Recall")
-    ax.set_xlabel("Recall")
-    ax.set_ylabel("Precision")
-    ax.set_title("Cumulative Precision Curve")
-    ax.legend()
-    st.pyplot(fig)
-
-    # SHAP Explainability Section
-    st.header("SHAP Explainability")
-
-    # Simulate SHAP values (replace with actual model SHAP values if available)
-    explainer = shap.Explainer(lambda x: y_pred_prob, X)
-    shap_values = explainer(X)
-
-    # Feature Importance
-    st.subheader("Feature Importance")
-    shap.summary_plot(shap_values, X, plot_type="bar", show=False)
-    st.pyplot(bbox_inches="tight")
-
-    # SHAP Dependence Plot
-    st.subheader("SHAP Dependence Plot")
-    fig, ax = plt.subplots()
-    shap.dependence_plot(selected_feature, shap_values.values, X, ax=ax, show=False)
-    st.pyplot(fig)
-
-    # SHAP Summary Plot
-    st.subheader("SHAP Summary Plot")
-    shap.summary_plot(shap_values, X, show=False)
-    st.pyplot(bbox_inches="tight")
-
-    # Individual Predictions Section
-    st.header("Individual Predictions")
-
-    # Prediction Output
-    st.subheader("Prediction Output")
-    pred_prob = y_pred_prob[selected_instance]
-    actual = y_true[selected_instance]
-    st.write(f"Predicted Probability: {pred_prob:.2f}")
-    st.write(f"Actual Value: {actual}")
-    fig, ax = plt.subplots()
-    ax.pie([pred_prob, 1 - pred_prob], labels=["Positive", "Negative"], autopct="%.1f%%")
-    ax.set_title("Prediction Probability")
-    st.pyplot(fig)
-
-    # Feature Contribution
-    st.subheader("Feature Contribution")
-    shap.force_plot(explainer.expected_value, shap_values.values[selected_instance], X.iloc[selected_instance], matplotlib=True)
-    st.pyplot(bbox_inches="tight")
+# Bar Chart: Patients by Care Unit
+if not filtered_data.empty:
+    care_unit_count = filtered_data["first_careunit"].value_counts().reset_index()
+    care_unit_count.columns = ["Care Unit", "Count"]
+    fig_bar = px.bar(care_unit_count, x="Care Unit", y="Count", title="Patients by Care Unit")
+    st.plotly_chart(fig_bar, use_container_width=True)
 else:
-    st.stop()
+    st.write("No data available for the selected filters.")
+
+# Scatter Plot: Length of Stay vs. Measurement Value
+if not filtered_data.empty:
+    fig_scatter = px.scatter(
+        filtered_data, 
+        x="los", y="valuenum", 
+        color="first_careunit", 
+        title="Length of Stay vs. Measurement Value",
+        labels={"los": "Length of Stay (days)", "valuenum": "Measurement Value"}
+    )
+    st.plotly_chart(fig_scatter, use_container_width=True)
+else:
+    st.write("No data available for the selected filters.")
+
+# Summary Text
+st.subheader("Summary")
+if not filtered_data.empty:
+    st.write(f"The selected measurement '{selected_item}' shows an average value of "
+             f"{filtered_data['valuenum'].mean():.2f} across all patients.")
+else:
+    st.write("No data available for the selected filters.")
