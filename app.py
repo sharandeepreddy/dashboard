@@ -68,7 +68,8 @@ if chart_file and item_file and stay_file:
 
     # Correlation heatmap
     st.write("Correlation Heatmap")
-    corr = ventilation_filtered.corr()
+    numeric_columns = ventilation_filtered.select_dtypes(include=[np.number])
+    corr = numeric_columns.corr()  # Use only numeric columns for correlation
     fig, ax = plt.subplots(figsize=(10, 8))
     sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm", ax=ax)
     st.pyplot(fig)
