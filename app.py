@@ -1,77 +1,73 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+import plotly.express as px
 
-# Title and description
-st.title("ICU Ventilation Equipment Dashboard")
-st.write("This dashboard predicts ventilation equipment needs using the MIMIC-III dataset.")
+# Load datasets (sampled for performance; in real deployment, optimize or use a database)
+@st.cache_data
+def load_data():
+    chart_events = pd.read_csv("CHARTEVENTS.csv", nrows=1000)
+    d_items = pd.read_csv("D_ITEMS.csv")
+    icu_stays = pd.read_csv("ICUSTAYS.csv")
+    return chart_events, d_items, icu_stays
 
-# File upload
-st.sidebar.header("Upload Dataset Files")
-chart_file = st.sidebar.file_uploader("Upload CHARTEVENTS.csv", type=['csv'])
-item_file = st.sidebar.file_uploader("Upload D_ITEMS.csv", type=['csv'])
-stay_file = st.sidebar.file_uploader("Upload ICUSTAYS.csv", type=['csv'])
+chart_events, d_items, icu_stays = load_data()
 
-if chart_file and item_file and stay_file:
-    # Load datasets
-    st.write("### Dataset Loading")
-    chart_event = pd.read_csv(chart_file, usecols=['icustay_id', 'itemid', 'charttime', 'value', 'valuenum', 'valueuom', 'error'])
-    chart_event = chart_event.loc[chart_event['error'] != 1]
-    chart_event.drop(['error'], axis=1, inplace=True)
-    st.write("CHARTEVENTS loaded:", chart_event.head())
+# Merge datasets for meaningful insights
+merged_data = pd.merge(chart_events, icu_stays, on="icustay_id", how="inner")
+merged_data = pd.merge(merged_data, d_items, on="itemid", how="inner")
 
-    d_item = pd.read_csv(item_file)
-    icu_stay = pd.read_csv(stay_file)
+# Sidebar filters
+st.sidebar.title("Filters")
+selected_unit = st.sidebar.multiselect("Select Care Unit", icu_stays["first_careunit"].unique())
+selected_year = st.sidebar.slider("Select Year Range", 2125, 2165, (2130, 2150))
+selected_item = st.sidebar.selectbox("Select Measurement", d_items["label"].unique())
 
-    # Merge datasets
-    ventilation = pd.merge(chart_event, d_item, on='itemid')
-    ventilation = pd.merge(ventilation, icu_stay, on='icustay_id')
+# Filter data based on selections
+filtered_data = merged_data[
+    (merged_data["first_careunit"].isin(selected_unit)) &
+    (pd.to_datetime(merged_data["intime"]).dt.year.between(*selected_year)) &
+    (merged_data["label"] == selected_item)
+]
 
-    # Feature selection and processing
-    selected = ['Respiratory Rate', 'Heart Rate', 'Non Invasive Blood Pressure mean', 'Non Invasive Blood Pressure diastolic']
-    ventilation = ventilation.loc[ventilation['label'].isin(selected)]
-    ventilation['charttime'] = pd.to_datetime(ventilation['charttime'])
-    ventilation['intime'] = pd.to_datetime(ventilation['intime'])
-    ventilation['icu_time'] = (ventilation['charttime'] - ventilation['intime']).dt.total_seconds() / 3600
-    ventilation.drop(['intime', 'outtime', 'conceptid'], axis=1, inplace=True)
-    ventilation['patient_id'] = np.arange(1, len(ventilation) + 1)
+# Main Dashboard
+st.title("ICU Dashboard")
 
-    # Display merged dataset
-    st.write("### Merged Dataset")
-    st.dataframe(ventilation.head())
+# Key Metrics
+st.subheader("Key Metrics")
+avg_los = filtered_data["los"].mean() if not filtered_data.empty else 0
+total_patients = filtered_data["subject_id"].nunique()
+st.metric("Average Length of Stay (days)", f"{avg_los:.2f}")
+st.metric("Total Patients", total_patients)
 
-    # Handle missing data
-    st.write("### Missing Data Analysis")
-    missing_data = ventilation.isnull().sum()
-    st.write(missing_data)
+# Visualizations
+st.subheader("Visualizations")
 
-    # Feature engineering
-    ventilation['year'] = ventilation['charttime'].dt.year
-    ventilation['month'] = ventilation['charttime'].dt.month
-    ventilation['day'] = ventilation['charttime'].dt.day
-    ventilation['hour'] = ventilation['charttime'].dt.hour
-    ventilation['minute'] = ventilation['charttime'].dt.minute
-    ventilation['second'] = ventilation['charttime'].dt.second
-    ventilation.drop(['charttime'], axis=1, inplace=True)
-
-    # Visualizations
-    st.write("### Visualizations")
-
-    # Correlation heatmap
-    st.write("Correlation Heatmap")
-    corr = ventilation.corr()
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm")
-    st.pyplot(plt)
-
-    # Distribution of ICU times
-    st.write("ICU Time Distribution")
-    plt.figure(figsize=(8, 6))
-    sns.histplot(ventilation['icu_time'], kde=True, bins=30, color='blue')
-    plt.title("ICU Time Distribution")
-    st.pyplot(plt)
-
+# Bar Chart: Patients by Care Unit
+if not filtered_data.empty:
+    care_unit_count = filtered_data["first_careunit"].value_counts().reset_index()
+    care_unit_count.columns = ["Care Unit", "Count"]
+    fig_bar = px.bar(care_unit_count, x="Care Unit", y="Count", title="Patients by Care Unit")
+    st.plotly_chart(fig_bar, use_container_width=True)
 else:
-    st.warning("Please upload all required files.")
+    st.write("No data available for the selected filters.")
+
+# Scatter Plot: Length of Stay vs. Measurement Value
+if not filtered_data.empty:
+    fig_scatter = px.scatter(
+        filtered_data, 
+        x="los", y="valuenum", 
+        color="first_careunit", 
+        title="Length of Stay vs. Measurement Value",
+        labels={"los": "Length of Stay (days)", "valuenum": "Measurement Value"}
+    )
+    st.plotly_chart(fig_scatter, use_container_width=True)
+else:
+    st.write("No data available for the selected filters.")
+
+# Summary Text
+st.subheader("Summary")
+if not filtered_data.empty:
+    st.write(f"The selected measurement '{selected_item}' shows an average value of "
+             f"{filtered_data['valuenum'].mean():.2f} across all patients.")
+else:
+    st.write("No data available for the selected filters.")
