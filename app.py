@@ -5,15 +5,23 @@ import plotly.express as px
 # Load datasets (sampled for performance; in real deployment, optimize or use a database)
 @st.cache_data
 def load_data():
-    chart_events = pd.read_csv("CHARTEVENTS.csv", nrows=1000)
-    d_items = pd.read_csv("D_ITEMS.csv")
-    icu_stays = pd.read_csv("ICUSTAYS.csv")
-    return chart_events, d_items, icu_stays
+    try:
+        chart_events = pd.read_csv("CHARTEVENTS.csv", nrows=1000)
+        d_items = pd.read_csv("D_ITEMS.csv")
+        icu_stays = pd.read_csv("ICUSTAYS.csv")
+        return chart_events, d_items, icu_stays
+    except FileNotFoundError as e:
+        st.error(f"File not found: {e}")
+        return None, None, None
 
 chart_events, d_items, icu_stays = load_data()
 
+# Check if data is loaded successfully
+if chart_events is None or d_items is None or icu_stays is None:
+    st.stop()
+
 # Merge datasets for meaningful insights
-merged_data = pd.merge(chart_events, icu_stays, on="icustay_id", how="inner")
+merged_data = pd.merge(chart_events, icu_stays, on="icustay_id", how="inner", suffixes=('_chart', '_icu'))
 merged_data = pd.merge(merged_data, d_items, on="itemid", how="inner")
 
 # Sidebar filters
@@ -34,8 +42,14 @@ st.title("ICU Dashboard")
 
 # Key Metrics
 st.subheader("Key Metrics")
-avg_los = filtered_data["los"].mean() if not filtered_data.empty else 0
-total_patients = filtered_data["subject_id"].nunique()
+if filtered_data.empty:
+    st.warning("No data available for the selected filters.")
+    avg_los = 0
+    total_patients = 0
+else:
+    avg_los = filtered_data["los"].mean()
+    total_patients = filtered_data["subject_id"].nunique() if "subject_id" in filtered_data.columns else 0
+
 st.metric("Average Length of Stay (days)", f"{avg_los:.2f}")
 st.metric("Total Patients", total_patients)
 
@@ -67,7 +81,7 @@ else:
 # Summary Text
 st.subheader("Summary")
 if not filtered_data.empty:
-    st.write(f"The selected measurement '{selected_item}' shows an average value of "
-             f"{filtered_data['valuenum'].mean():.2f} across all patients.")
+    avg_measurement = filtered_data["valuenum"].mean()
+    st.write(f"The selected measurement '{selected_item}' shows an average value of {avg_measurement:.2f} across all patients.")
 else:
     st.write("No data available for the selected filters.")
