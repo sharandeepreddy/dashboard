@@ -6,10 +6,12 @@ import seaborn as sns
 
 # Title and description
 st.title("ICU Ventilation Equipment Dashboard")
-st.write("This dashboard predicts ventilation equipment needs using the MIMIC-III dataset.")
+st.write("An interactive dashboard to explore ICU ventilation data insights using the MIMIC-III dataset.")
+
+# Sidebar for user inputs
+st.sidebar.header("User Inputs")
 
 # File upload
-st.sidebar.header("Upload Dataset Files")
 chart_file = st.sidebar.file_uploader("Upload CHARTEVENTS.csv", type=['csv'])
 item_file = st.sidebar.file_uploader("Upload D_ITEMS.csv", type=['csv'])
 stay_file = st.sidebar.file_uploader("Upload ICUSTAYS.csv", type=['csv'])
@@ -20,7 +22,6 @@ if chart_file and item_file and stay_file:
     chart_event = pd.read_csv(chart_file, usecols=['icustay_id', 'itemid', 'charttime', 'value', 'valuenum', 'valueuom', 'error'])
     chart_event = chart_event.loc[chart_event['error'] != 1]
     chart_event.drop(['error'], axis=1, inplace=True)
-    st.write("CHARTEVENTS loaded:", chart_event.head())
 
     d_item = pd.read_csv(item_file)
     icu_stay = pd.read_csv(stay_file)
@@ -38,40 +39,50 @@ if chart_file and item_file and stay_file:
     ventilation.drop(['intime', 'outtime', 'conceptid'], axis=1, inplace=True)
     ventilation['patient_id'] = np.arange(1, len(ventilation) + 1)
 
-    # Display merged dataset
-    st.write("### Merged Dataset")
-    st.dataframe(ventilation.head())
+    # Sidebar interactive components
+    st.sidebar.header("Filters and Parameters")
+    selected_label = st.sidebar.selectbox("Select Variable to Explore", selected)
+    time_range = st.sidebar.slider("ICU Time Range (hours)", int(ventilation['icu_time'].min()), int(ventilation['icu_time'].max()), (0, 48))
+    ventilation_filtered = ventilation[(ventilation['label'] == selected_label) & (ventilation['icu_time'].between(*time_range))]
 
-    # Handle missing data
-    st.write("### Missing Data Analysis")
-    missing_data = ventilation.isnull().sum()
-    st.write(missing_data)
+    # Display filtered data
+    st.write(f"### Filtered Data ({selected_label})")
+    st.dataframe(ventilation_filtered.head())
 
-    # Feature engineering
-    ventilation['year'] = ventilation['charttime'].dt.year
-    ventilation['month'] = ventilation['charttime'].dt.month
-    ventilation['day'] = ventilation['charttime'].dt.day
-    ventilation['hour'] = ventilation['charttime'].dt.hour
-    ventilation['minute'] = ventilation['charttime'].dt.minute
-    ventilation['second'] = ventilation['charttime'].dt.second
-    ventilation.drop(['charttime'], axis=1, inplace=True)
+    # Summary statistics
+    st.write("### Key Metrics")
+    mean_val = ventilation_filtered['valuenum'].mean()
+    median_val = ventilation_filtered['valuenum'].median()
+    st.metric(label="Mean Value", value=f"{mean_val:.2f}")
+    st.metric(label="Median Value", value=f"{median_val:.2f}")
 
     # Visualizations
     st.write("### Visualizations")
 
+    # Distribution plot
+    st.write(f"Distribution of {selected_label}")
+    fig, ax = plt.subplots(figsize=(8, 6))
+    sns.histplot(ventilation_filtered['valuenum'], kde=True, bins=30, ax=ax, color='blue')
+    ax.set_title(f"Distribution of {selected_label}")
+    st.pyplot(fig)
+
     # Correlation heatmap
     st.write("Correlation Heatmap")
-    corr = ventilation.corr()
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm")
-    st.pyplot(plt)
+    corr = ventilation_filtered.corr()
+    fig, ax = plt.subplots(figsize=(10, 8))
+    sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm", ax=ax)
+    st.pyplot(fig)
 
-    # Distribution of ICU times
-    st.write("ICU Time Distribution")
-    plt.figure(figsize=(8, 6))
-    sns.histplot(ventilation['icu_time'], kde=True, bins=30, color='blue')
-    plt.title("ICU Time Distribution")
-    st.pyplot(plt)
+    # Trend over time
+    st.write("Trend Over Time")
+    ventilation_filtered['hour'] = ventilation_filtered['charttime'].dt.hour
+    avg_by_hour = ventilation_filtered.groupby('hour')['valuenum'].mean().reset_index()
+    fig, ax = plt.subplots(figsize=(8, 6))
+    sns.lineplot(data=avg_by_hour, x='hour', y='valuenum', ax=ax, marker='o')
+    ax.set_title(f"Hourly Trend of {selected_label}")
+    ax.set_xlabel("Hour of Day")
+    ax.set_ylabel("Average Value")
+    st.pyplot(fig)
 
 else:
     st.warning("Please upload all required files.")
