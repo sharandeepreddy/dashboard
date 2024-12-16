@@ -5,20 +5,18 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import roc_curve, auc, confusion_matrix, precision_recall_curve
 import shap
-import joblib
 
-# Load model and data
+# Load data
 @st.cache_resource
-def load_model_and_data():
-    model = joblib.load("model.pkl")  # Replace with your model path
+def load_data():
     data = pd.read_csv("data.csv")  # Replace with your dataset path
-    return model, data
+    return data
 
 # Dashboard
 st.title("Classifier Performance and Explainability Dashboard")
 
-# Load model and data
-model, data = load_model_and_data()
+# Load data
+data = load_data()
 
 # Sidebar inputs
 st.sidebar.header("User Inputs")
@@ -26,10 +24,11 @@ selected_threshold = st.sidebar.slider("Prediction Cutoff Probability", 0.0, 1.0
 selected_feature = st.sidebar.selectbox("Select Feature for SHAP Dependence Plot", data.columns[:-1])
 selected_instance = st.sidebar.number_input("Select Data Point (Index)", 0, len(data) - 1, 0)
 
-# Model predictions and probabilities
+# Model predictions and probabilities (simulated based on existing data)
 X = data.drop(columns=["target"])
 y_true = data["target"]
-y_pred_prob = model.predict_proba(X)[:, 1]
+# Simulate prediction probabilities and predictions
+y_pred_prob = np.random.rand(len(data))  # Replace with actual prediction probabilities if available
 y_pred = (y_pred_prob >= selected_threshold).astype(int)
 
 # Model Performance Section
@@ -68,24 +67,24 @@ st.pyplot(fig)
 # SHAP Explainability Section
 st.header("SHAP Explainability")
 
-# SHAP values
-explainer = shap.TreeExplainer(model)
-shap_values = explainer.shap_values(X)
+# Simulate SHAP values (replace with actual model SHAP values if available)
+explainer = shap.Explainer(lambda x: y_pred_prob, X)
+shap_values = explainer(X)
 
 # Feature Importance
 st.subheader("Feature Importance")
-shap.summary_plot(shap_values[1], X, plot_type="bar", show=False)
+shap.summary_plot(shap_values, X, plot_type="bar", show=False)
 st.pyplot(bbox_inches="tight")
 
 # SHAP Dependence Plot
 st.subheader("SHAP Dependence Plot")
 fig, ax = plt.subplots()
-shap.dependence_plot(selected_feature, shap_values[1], X, ax=ax, show=False)
+shap.dependence_plot(selected_feature, shap_values.values, X, ax=ax, show=False)
 st.pyplot(fig)
 
 # SHAP Summary Plot
 st.subheader("SHAP Summary Plot")
-shap.summary_plot(shap_values[1], X, show=False)
+shap.summary_plot(shap_values, X, show=False)
 st.pyplot(bbox_inches="tight")
 
 # Individual Predictions Section
@@ -104,5 +103,5 @@ st.pyplot(fig)
 
 # Feature Contribution
 st.subheader("Feature Contribution")
-shap.force_plot(explainer.expected_value[1], shap_values[1][selected_instance], X.iloc[selected_instance], matplotlib=True)
+shap.force_plot(explainer.expected_value, shap_values.values[selected_instance], X.iloc[selected_instance], matplotlib=True)
 st.pyplot(bbox_inches="tight")
