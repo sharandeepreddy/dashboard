@@ -4,37 +4,16 @@ import plotly.express as px
 import plotly.graph_objects as go
 import pymysql
 
-# Function to load data from MySQL
 @st.cache_data
-def load_data_from_mysql():
+def load_data():
     try:
-        con = pymysql.connect(
-            host='127.0.0.1',
-            port=3306,
-            user='root',
-            password='root',
-            database='mimic',
-            charset='utf8'
-        )
-        # Load required tables
-        query_chart_events = "SELECT * FROM chart_events LIMIT 5000"
-        query_icu_stays = "SELECT * FROM icustays"
-        query_d_items = "SELECT * FROM d_items"
-
-        chart_events = pd.read_sql(query_chart_events, con)
-        icu_stays = pd.read_sql(query_icu_stays, con)
-        d_items = pd.read_sql(query_d_items, con)
-        
-        con.close()
+        chart_events = pd.read_csv("CHARTEVENTS.csv", nrows=5000)
+        icu_stays = pd.read_csv("ICUSTAYS.csv")
+        d_items = pd.read_csv("D_ITEMS.csv")
         return chart_events, icu_stays, d_items
-    except Exception as e:
-        st.error(f"Error connecting to database: {e}")
+    except FileNotFoundError as e:
+        st.error(f"Error loading files: {e}")
         return None, None, None
-
-# Load data
-chart_events, icu_stays, d_items = load_data_from_mysql()
-if chart_events is None or icu_stays is None or d_items is None:
-    st.stop()
 
 # Merge datasets
 chart_events = chart_events.dropna(subset=["itemid", "valuenum"])  # Remove null measurements
