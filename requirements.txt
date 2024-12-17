@@ -1,6 +1,5 @@
-streamlit
-pandas
-plotly
-seaborn
-matplotlib
-numpy
+streamlit==1.30.0
+pandas==2.1.4
+plotly==5.18.0
+pymysql==1.1.0
+numpy==1.26.2
