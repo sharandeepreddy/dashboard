@@ -27,6 +27,11 @@ merged_data = pd.merge(chart_events, icu_stays[['icustay_id', 'subject_id', 'los
                        on="icustay_id", how="inner")
 merged_data = pd.merge(merged_data, d_items[['itemid', 'label']], on="itemid", how="inner")
 
+# Ensure 'subject_id' column exists after filtering
+if 'subject_id' not in merged_data.columns:
+    st.error("The 'subject_id' column is missing from the merged data. Check the CSV files.")
+    st.stop()
+
 # Sidebar Filters
 st.sidebar.title("Filters")
 care_unit_filter = st.sidebar.multiselect(
@@ -35,7 +40,7 @@ care_unit_filter = st.sidebar.multiselect(
     default=icu_stays["first_careunit"].unique()
 )
 
-# Filter Data
+# Filtered Data
 filtered_data = merged_data[merged_data["first_careunit"].isin(care_unit_filter)]
 
 # Main Dashboard Title
@@ -43,8 +48,8 @@ st.title("ICU Management Dashboard")
 
 # Metrics
 st.subheader("Key Metrics")
-total_patients = icu_stays["subject_id"].nunique()
-average_los = icu_stays["los"].mean()
+total_patients = filtered_data["subject_id"].nunique()
+average_los = filtered_data["los"].mean()
 
 col1, col2 = st.columns(2)
 col1.metric("Total Patients", total_patients)
@@ -73,6 +78,9 @@ st.plotly_chart(fig_scatter)
 
 # Interactive Graph: ICU Time Monitoring Types
 st.subheader("ICU Spent Time with Different Monitoring Types")
+# Ensure data types
+filtered_data["subject_id"] = filtered_data["subject_id"].astype(str)
+
 data1 = filtered_data.loc[filtered_data['label'] == "Heart Rate"]
 data2 = filtered_data.loc[filtered_data['label'] == "Blood Pressure Diastolic"]
 data3 = filtered_data.loc[filtered_data['label'] == "Blood Pressure Mean"]
@@ -103,7 +111,7 @@ st.plotly_chart(fig)
 
 # Table: ICU Care Unit Summary
 st.subheader("ICU Care Unit Summary")
-icu_summary = icu_stays.groupby("first_careunit").agg(
+icu_summary = filtered_data.groupby("first_careunit").agg(
     Total_Stays=("icustay_id", "count"),
     Avg_LOS=("los", "mean")
 ).reset_index()
