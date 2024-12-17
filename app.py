@@ -79,6 +79,59 @@ fig_scatter = px.scatter(
 )
 st.plotly_chart(fig_scatter)
 
+# Histogram: LOS Distribution
+st.subheader("Distribution of Length of Stay (LOS)")
+bin_size = st.slider("Select Bin Size for Histogram", min_value=1, max_value=20, value=5)
+fig_hist = px.histogram(
+    filtered_data, 
+    x="los", 
+    nbins=bin_size, 
+    title="Distribution of Length of Stay",
+    labels={"los": "Length of Stay (days)"}
+)
+st.plotly_chart(fig_hist)
+
+# Line Chart: Monitoring Trends Over Time
+st.subheader("Monitoring Trends Over Time")
+measurement_filter = st.multiselect(
+    "Select Measurement Types", 
+    filtered_data["label"].unique(), 
+    default=filtered_data["label"].unique()[:3]
+)
+filtered_trend_data = filtered_data[filtered_data["label"].isin(measurement_filter)]
+
+if not filtered_trend_data.empty:
+    fig_line = px.line(
+        filtered_trend_data, 
+        x="charttime", 
+        y="valuenum", 
+        color="label",
+        title="Monitoring Trends Over Time",
+        labels={"charttime": "Time", "valuenum": "Measurement Value"}
+    )
+    st.plotly_chart(fig_line)
+else:
+    st.warning("No data available for the selected measurements.")
+
+# Searchable Data Table
+st.subheader("Search Filtered Data")
+search_keyword = st.text_input("Search by Measurement Label", "")
+if search_keyword:
+    searched_data = filtered_data[filtered_data["label"].str.contains(search_keyword, case=False, na=False)]
+else:
+    searched_data = filtered_data
+st.dataframe(searched_data.head(20))
+
+# Download Filtered Data
+st.subheader("Download Filtered Data")
+csv_data = searched_data.to_csv(index=False).encode("utf-8")
+st.download_button(
+    label="Download Filtered Data as CSV",
+    data=csv_data,
+    file_name="filtered_data.csv",
+    mime="text/csv"
+)
+
 # Table: ICU Care Unit Summary
 st.subheader("ICU Care Unit Summary")
 icu_summary = icu_stays.groupby("first_careunit").agg(
