@@ -30,10 +30,18 @@ merged_data = pd.merge(merged_data, d_items[['itemid', 'label']], on="itemid", h
 
 # Sidebar filters
 st.sidebar.title("Filters")
-care_unit_filter = st.sidebar.multiselect("Select Care Units", icu_stays["first_careunit"].unique(),
+care_unit_filter = st.sidebar.multiselect("Select Care Units", 
+                                          icu_stays["first_careunit"].unique(),
                                           default=icu_stays["first_careunit"].unique())
-measurement_filter = st.sidebar.multiselect("Select Measurements", merged_data["label"].unique(),
-                                            default=["Heart Rate", "Blood Pressure"])
+
+# Dynamic defaults for measurements
+available_measurements = merged_data["label"].unique()
+default_measurements = available_measurements[:2] if len(available_measurements) > 1 else available_measurements
+
+measurement_filter = st.sidebar.multiselect("Select Measurements", 
+                                            available_measurements, 
+                                            default=default_measurements)
+
 los_range = st.sidebar.slider("Select Length of Stay (LOS) Range", 
                               int(icu_stays["los"].min()), int(icu_stays["los"].max()), (0, 10))
 start_date, end_date = st.sidebar.date_input("Select Admission Date Range", 
@@ -89,7 +97,7 @@ fig, ax = plt.subplots()
 sns.heatmap(numeric_cols.corr(), annot=True, cmap="coolwarm", ax=ax)
 st.pyplot(fig)
 
-# Summary Table
+# Table: ICU Care Unit Summary
 st.subheader("ICU Care Unit Summary")
 icu_summary = filtered_data.groupby("first_careunit").agg(
     Total_Stays=("icustay_id", "count"),
