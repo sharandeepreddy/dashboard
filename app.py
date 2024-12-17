@@ -7,7 +7,6 @@ import plotly.graph_objects as go
 @st.cache_data
 def load_data():
     try:
-        # Load datasets
         chart_events = pd.read_csv("CHARTEVENTS.csv", nrows=5000)
         icu_stays = pd.read_csv("ICUSTAYS.csv")
         d_items = pd.read_csv("D_ITEMS.csv")
@@ -21,16 +20,23 @@ chart_events, icu_stays, d_items = load_data()
 if chart_events is None or icu_stays is None or d_items is None:
     st.stop()
 
-# Data Merging and Cleaning
-chart_events = chart_events.dropna(subset=["itemid", "valuenum"])  # Remove rows with null measurements
+# Debugging: Verify Columns
+st.write("Columns in chart_events:", chart_events.columns)
+st.write("Columns in icu_stays:", icu_stays.columns)
+st.write("Columns in d_items:", d_items.columns)
+
+# Ensure 'subject_id' column exists in icu_stays
+if 'subject_id' not in icu_stays.columns:
+    st.error("'subject_id' column is missing in ICUSTAYS.csv. Please check the file.")
+    st.stop()
+
+# Data Merging
+chart_events = chart_events.dropna(subset=["itemid", "valuenum"])
 merged_data = pd.merge(chart_events, icu_stays[['icustay_id', 'subject_id', 'los', 'first_careunit']], 
                        on="icustay_id", how="inner")
 merged_data = pd.merge(merged_data, d_items[['itemid', 'label']], on="itemid", how="inner")
 
-# Ensure 'subject_id' column exists after filtering
-if 'subject_id' not in merged_data.columns:
-    st.error("The 'subject_id' column is missing from the merged data. Check the CSV files.")
-    st.stop()
+st.write("Columns in merged_data:", merged_data.columns)  # Debugging merged_data columns
 
 # Sidebar Filters
 st.sidebar.title("Filters")
@@ -55,67 +61,12 @@ col1, col2 = st.columns(2)
 col1.metric("Total Patients", total_patients)
 col2.metric("Average Length of Stay (LOS)", f"{average_los:.2f} days")
 
-# Pie Chart: ICU Care Unit Distribution
+# Visualizations
 st.subheader("ICU Care Unit Distribution")
 care_unit_dist = icu_stays["first_careunit"].value_counts().reset_index()
 care_unit_dist.columns = ["Care Unit", "Count"]
 fig_pie = px.pie(care_unit_dist, names="Care Unit", values="Count", title="ICU Care Unit Distribution")
 st.plotly_chart(fig_pie)
-
-# Bar Chart: Top Measurements
-st.subheader("Top 10 Measurements Collected")
-top_measurements = filtered_data["label"].value_counts().nlargest(10).reset_index()
-top_measurements.columns = ["Measurement", "Count"]
-fig_bar = px.bar(top_measurements, x="Measurement", y="Count", title="Top 10 Measurements Collected")
-st.plotly_chart(fig_bar)
-
-# Scatter Plot: LOS vs. Measurement Value
-st.subheader("Length of Stay vs. Measurement Value")
-fig_scatter = px.scatter(filtered_data, x="los", y="valuenum", color="label",
-                         title="Length of Stay vs Measurement Value",
-                         labels={"los": "Length of Stay (days)", "valuenum": "Measurement Value"})
-st.plotly_chart(fig_scatter)
-
-# Interactive Graph: ICU Time Monitoring Types
-st.subheader("ICU Spent Time with Different Monitoring Types")
-# Ensure data types
-filtered_data["subject_id"] = filtered_data["subject_id"].astype(str)
-
-data1 = filtered_data.loc[filtered_data['label'] == "Heart Rate"]
-data2 = filtered_data.loc[filtered_data['label'] == "Blood Pressure Diastolic"]
-data3 = filtered_data.loc[filtered_data['label'] == "Blood Pressure Mean"]
-data4 = filtered_data.loc[filtered_data['label'] == "Respiratory Rate"]
-
-fig = go.Figure()
-fig.add_trace(go.Scatter(x=data1['subject_id'], y=data1['valuenum'], name="Heart Rate", line=dict(color="red")))
-
-fig.update_layout(
-    title_text="ICU Spent Time with Different Monitoring Types",
-    updatemenus=[
-        dict(
-            active=0,
-            buttons=list([
-                dict(label="Heart Rate", method="update", 
-                     args=[{"x": [data1['subject_id']], "y": [data1['valuenum']]}, {"title": "Heart Rate Monitoring"}]),
-                dict(label="Blood Pressure Diastolic", method="update", 
-                     args=[{"x": [data2['subject_id']], "y": [data2['valuenum']]}, {"title": "Blood Pressure Diastolic"}]),
-                dict(label="Blood Pressure Mean", method="update", 
-                     args=[{"x": [data3['subject_id']], "y": [data3['valuenum']]}, {"title": "Blood Pressure Mean"}]),
-                dict(label="Respiratory Rate", method="update", 
-                     args=[{"x": [data4['subject_id']], "y": [data4['valuenum']]}, {"title": "Respiratory Rate"}]),
-            ])
-        )
-    ]
-)
-st.plotly_chart(fig)
-
-# Table: ICU Care Unit Summary
-st.subheader("ICU Care Unit Summary")
-icu_summary = filtered_data.groupby("first_careunit").agg(
-    Total_Stays=("icustay_id", "count"),
-    Avg_LOS=("los", "mean")
-).reset_index()
-st.dataframe(icu_summary)
 
 # Filtered Data Preview
 st.subheader("Filtered Data Preview")
