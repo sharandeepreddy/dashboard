@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 @st.cache_data
 def load_data():
     try:
-        chart_events = pd.read_csv("CHARTEVENTS.csv", nrows=5000)  # Load sample data
+        chart_events = pd.read_csv("CHARTEVENTS.csv", nrows=5000)
         icu_stays = pd.read_csv("ICUSTAYS.csv")
         d_items = pd.read_csv("D_ITEMS.csv")
         return chart_events, icu_stays, d_items
@@ -17,7 +17,7 @@ def load_data():
         st.error(f"Error loading files: {e}")
         return None, None, None
 
-# Load the data
+# Load data
 chart_events, icu_stays, d_items = load_data()
 if chart_events is None or icu_stays is None or d_items is None:
     st.stop()
@@ -55,6 +55,10 @@ start_date, end_date = st.sidebar.date_input("Select Admission Date Range",
 # Convert `intime` to datetime and drop invalid rows
 merged_data["intime"] = pd.to_datetime(merged_data["intime"], errors='coerce')
 filtered_data = merged_data.dropna(subset=["intime"])
+
+# Convert start_date and end_date to pandas Timestamps
+start_date = pd.Timestamp(start_date)
+end_date = pd.Timestamp(end_date)
 
 # Apply Filters
 filtered_data = filtered_data[
