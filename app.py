@@ -28,8 +28,10 @@ measurement_options = ["Heart Rate", "Blood Pressure", "Oxygen Saturation"]
 filtered_items = d_items[d_items["label"].isin(measurement_options)]
 
 # Merge datasets
-merged_data = pd.merge(chart_events, icu_stays, on="icustay_id", how="inner", suffixes=('_chart', '_icu'))
-merged_data = pd.merge(merged_data, filtered_items, on="itemid", how="inner")
+# Ensure 'subject_id' and other critical columns are retained
+merged_data = pd.merge(chart_events, icu_stays[['icustay_id', 'subject_id', 'first_careunit', 'intime', 'los']], 
+                       on="icustay_id", how="inner")
+merged_data = pd.merge(merged_data, filtered_items[['itemid', 'label']], on="itemid", how="inner")
 
 # Sidebar filters
 st.sidebar.title("Filters")
@@ -43,6 +45,9 @@ filtered_data = merged_data[
     (pd.to_datetime(merged_data["intime"]).dt.year.between(*selected_year)) &
     (merged_data["label"] == selected_item)
 ]
+
+# Debugging: Show available columns in filtered_data
+st.write("Columns in filtered data:", filtered_data.columns)
 
 # Main Dashboard
 st.title("ICU Data Dashboard")
