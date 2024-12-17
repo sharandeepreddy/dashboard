@@ -6,7 +6,7 @@ import plotly.express as px
 @st.cache_data
 def load_data():
     try:
-        chart_events = pd.read_csv("CHARTEVENTS.csv", nrows=5000)
+        chart_events = pd.read_csv("CHARTEVENTS.csv", nrows=5000)  # Load only 5000 rows for efficiency
         d_items = pd.read_csv("D_ITEMS.csv")
         icu_stays = pd.read_csv("ICUSTAYS.csv")
         return chart_events, d_items, icu_stays
@@ -27,11 +27,19 @@ measurement_options = ["Heart Rate", "Blood Pressure", "Oxygen Saturation"]
 # Filter D_ITEMS to only include relevant measurements
 filtered_items = d_items[d_items["label"].isin(measurement_options)]
 
-# Merge datasets
-# Ensure 'subject_id' and other critical columns are retained
-merged_data = pd.merge(chart_events, icu_stays[['icustay_id', 'subject_id', 'first_careunit', 'intime', 'los']], 
-                       on="icustay_id", how="inner")
-merged_data = pd.merge(merged_data, filtered_items[['itemid', 'label']], on="itemid", how="inner")
+# Merge datasets and ensure necessary columns are retained
+merged_data = pd.merge(
+    chart_events[['icustay_id', 'subject_id', 'itemid', 'valuenum']],  # Include subject_id explicitly
+    icu_stays[['icustay_id', 'subject_id', 'first_careunit', 'intime', 'los']],
+    on="icustay_id",
+    how="inner"
+)
+merged_data = pd.merge(
+    merged_data,
+    filtered_items[['itemid', 'label']],
+    on="itemid",
+    how="inner"
+)
 
 # Sidebar filters
 st.sidebar.title("Filters")
@@ -46,8 +54,8 @@ filtered_data = merged_data[
     (merged_data["label"] == selected_item)
 ]
 
-# Debugging: Show available columns in filtered_data
-st.write("Columns in filtered data:", filtered_data.columns)
+# Debugging: Print columns to verify data
+st.write("Filtered Data Columns:", filtered_data.columns)
 
 # Main Dashboard
 st.title("ICU Data Dashboard")
@@ -61,7 +69,11 @@ if filtered_data.empty:
     total_patients = 0
 else:
     avg_los = filtered_data["los"].mean()
-    total_patients = filtered_data["subject_id"].nunique()
+    if "subject_id" in filtered_data.columns:
+        total_patients = filtered_data["subject_id"].nunique()
+    else:
+        st.error("The column 'subject_id' is missing from the filtered data.")
+        total_patients = 0
 
 st.metric("Average Length of Stay (days)", f"{avg_los:.2f}")
 st.metric("Total Patients", total_patients)
@@ -87,5 +99,13 @@ if not filtered_data.empty:
         title="Number of Patients by Care Unit"
     )
     st.plotly_chart(fig_bar, use_container_width=True)
+else:
+    st.write("No data available for the selected filters.")
+
+# Summary Text
+st.subheader("Summary")
+if not filtered_data.empty:
+    avg_measurement = filtered_data["valuenum"].mean()
+    st.write(f"The selected measurement '{selected_item}' shows an average value of {avg_measurement:.2f} across all patients.")
 else:
     st.write("No data available for the selected filters.")
