@@ -1,76 +1,78 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
+import numpy as np
 
-# Load datasets
+# Load and process data
 @st.cache_data
 def load_data():
-    try:
-        chart_events = pd.read_csv("CHARTEVENTS.csv", nrows=5000)
-        icu_stays = pd.read_csv("ICUSTAYS.csv")
-        d_items = pd.read_csv("D_ITEMS.csv")
-        return chart_events, icu_stays, d_items
-    except FileNotFoundError as e:
-        st.error(f"Error loading files: {e}")
-        return None, None, None
+    # Load datasets
+    chart_event = pd.read_csv("CHARTEVENTS.csv", usecols=['icustay_id', 'itemid', 'charttime', 'value', 'valuenum', 'valueuom', 'error'])
+    d_item = pd.read_csv("D_ITEMS.csv")
+    icu_stay = pd.read_csv("ICUSTAYS.csv")
+    
+    # Clean data
+    chart_event = chart_event.loc[chart_event['error'] != 1]
+    chart_event.drop(['error'], axis=1, inplace=True)
+
+    # Merge datasets
+    ventilation = pd.merge(chart_event, d_item, on='itemid')
+    ventilation = pd.merge(ventilation, icu_stay, on='icustay_id')
+
+    # Filter selected labels
+    selected = ['Respiratory Rate', 'Heart Rate', 'Non Invasive Blood Pressure mean', 'Non Invasive Blood Pressure diastolic']
+    ventilation = ventilation.loc[ventilation['label'].isin(selected)]
+
+    # Convert time to hours
+    ventilation['charttime'] = pd.to_datetime(ventilation['charttime'])
+    ventilation['intime'] = pd.to_datetime(ventilation['intime'])
+    ventilation['icu_time'] = (ventilation['charttime'] - ventilation['intime']).dt.total_seconds() / 3600
+    ventilation.drop(['intime', 'outtime', 'conceptid'], axis=1, inplace=True)
+
+    return ventilation
 
 # Load data
-chart_events, icu_stays, d_items = load_data()
-if chart_events is None or icu_stays is None or d_items is None:
-    st.stop()
-
-# Merge datasets
-chart_events = chart_events.dropna(subset=["itemid", "valuenum"])  # Remove null measurements
-merged_data = pd.merge(chart_events, icu_stays[['icustay_id', 'subject_id', 'los', 'first_careunit']], 
-                       on="icustay_id", how="inner")
-merged_data = pd.merge(merged_data, d_items[['itemid', 'label']], on="itemid", how="inner")
+ventilation = load_data()
 
 # Sidebar Filters
 st.sidebar.title("Filters")
-care_unit_filter = st.sidebar.multiselect("Select Care Units", icu_stays["first_careunit"].unique(), 
-                                          default=icu_stays["first_careunit"].unique())
+label_filter = st.sidebar.multiselect("Select Measurement Types", ventilation["label"].unique(), default=ventilation["label"].unique())
+icu_time_range = st.sidebar.slider("Select ICU Time Range (hours)", int(ventilation['icu_time'].min()), int(ventilation['icu_time'].max()), 
+                                   (0, int(ventilation['icu_time'].max())))
 
-# Filter Data
-filtered_data = merged_data[merged_data["first_careunit"].isin(care_unit_filter)]
+# Filtered Data
+filtered_data = ventilation[
+    (ventilation["label"].isin(label_filter)) & 
+    (ventilation["icu_time"].between(icu_time_range[0], icu_time_range[1]))
+]
 
 # Main Dashboard Title
-st.title("ICU Management Dashboard")
+st.title("ICU Ventilation Dashboard")
 
 # Metrics
 st.subheader("Key Metrics")
-total_patients = icu_stays["subject_id"].nunique()
-average_los = icu_stays["los"].mean()
+total_patients = filtered_data["icustay_id"].nunique()
+st.metric("Total ICU Stays", total_patients)
 
-col1, col2 = st.columns(2)
-col1.metric("Total Patients", total_patients)
-col2.metric("Average Length of Stay (LOS)", f"{average_los:.2f} days")
+# Line Chart: ICU Time vs Measurement Value
+st.subheader("Measurement Trends Over ICU Time")
+fig_line = px.line(filtered_data, x="icu_time", y="valuenum", color="label", title="ICU Time vs Measurement Value",
+                   labels={"icu_time": "ICU Time (hours)", "valuenum": "Measurement Value"})
+st.plotly_chart(fig_line)
 
-# Pie Chart: ICU Care Unit Distribution
-st.subheader("ICU Care Unit Distribution")
-care_unit_dist = icu_stays["first_careunit"].value_counts().reset_index()
-care_unit_dist.columns = ["Care Unit", "Count"]
-fig_pie = px.pie(care_unit_dist, names="Care Unit", values="Count", title="ICU Care Unit Distribution")
-st.plotly_chart(fig_pie)
-
-# Bar Chart: Top Measurements
-st.subheader("Top 10 Measurements Collected")
-top_measurements = filtered_data["label"].value_counts().nlargest(10).reset_index()
-top_measurements.columns = ["Measurement", "Count"]
-fig_bar = px.bar(top_measurements, x="Measurement", y="Count", title="Top 10 Measurements Collected")
-st.plotly_chart(fig_bar)
-
-# Scatter Plot: LOS vs. Measurement Value
-st.subheader("Length of Stay vs. Measurement Value")
-fig_scatter = px.scatter(filtered_data, x="los", y="valuenum", color="label",
-                         title="Length of Stay vs Measurement Value",
-                         labels={"los": "Length of Stay (days)", "valuenum": "Measurement Value"})
+# Scatter Plot
+st.subheader("Scatter Plot: ICU Time vs Measurement Value")
+fig_scatter = px.scatter(filtered_data, x="icu_time", y="valuenum", color="label",
+                         title="ICU Time vs Measurement Value",
+                         labels={"icu_time": "ICU Time (hours)", "valuenum": "Measurement Value"})
 st.plotly_chart(fig_scatter)
 
-# Table: ICU Care Unit Summary
-st.subheader("ICU Care Unit Summary")
-icu_summary = icu_stays.groupby("first_careunit").agg(
-    Total_Stays=("icustay_id", "count"),
-    Avg_LOS=("los", "mean")
-).reset_index()
-st.dataframe(icu_summary)
+# Bar Chart: Measurement Distribution
+st.subheader("Distribution of Measurement Types")
+fig_bar = px.bar(filtered_data['label'].value_counts().reset_index(), x='index', y='label', 
+                 labels={"index": "Measurement Type", "label": "Count"}, title="Measurement Distribution")
+st.plotly_chart(fig_bar)
+
+# Data Preview
+st.subheader("Filtered Data Preview")
+st.dataframe(filtered_data.head())
