@@ -86,38 +86,3 @@ icu_summary = icu_stays.groupby("first_careunit").agg(
     Avg_LOS=("los", "mean")
 ).reset_index()
 st.dataframe(icu_summary)
-
-# New Section: Interactive Line Chart for Monitoring Types
-st.subheader("ICU Monitoring Types Over Time")
-
-# Create filtered datasets for monitoring types
-data1 = filtered_data[filtered_data['label'] == "Heart Rate"]
-data2 = filtered_data[filtered_data['label'] == "Blood Pressure Diastolic"]
-data3 = filtered_data[filtered_data['label'] == "Blood Pressure Mean"]
-data4 = filtered_data[filtered_data['label'] == "Respiratory Rate"]
-
-# Interactive Line Chart
-fig_line = go.Figure()
-
-fig_line.add_trace(go.Scatter(x=data1['subject_id'], y=data1['valuenum'], 
-                              mode='lines', name='Heart Rate', line=dict(color='red')))
-fig_line.add_trace(go.Scatter(x=data2['subject_id'], y=data2['valuenum'], 
-                              mode='lines', name='Blood Pressure Diastolic', line=dict(color='yellow')))
-fig_line.add_trace(go.Scatter(x=data3['subject_id'], y=data3['valuenum'], 
-                              mode='lines', name='Blood Pressure Mean', line=dict(color='blue')))
-fig_line.add_trace(go.Scatter(x=data4['subject_id'], y=data4['valuenum'], 
-                              mode='lines', name='Respiratory Rate', line=dict(color='green')))
-
-fig_line.update_layout(
-    title="ICU Monitoring Types Over Subject IDs",
-    xaxis_title="Subject ID",
-    yaxis_title="Measurement Value",
-    legend_title="Monitoring Type"
-)
-
-# Show the chart
-st.plotly_chart(fig_line)
-
-# Data Preview
-st.subheader("Filtered Data Preview")
-st.dataframe(filtered_data.head())
