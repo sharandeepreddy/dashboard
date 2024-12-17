@@ -1,5 +1,29 @@
-import streamlit as st
-import pandas as pd
+import subprocess
+import sys
+
+# Function to install a package dynamically
+def install_package(package):
+    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
+# Install required packages dynamically
+try:
+    import pandas
+    import plotly
+    import seaborn
+    import matplotlib
+    import streamlit as st
+except ImportError:
+    install_package("pandas")
+    install_package("plotly")
+    install_package("seaborn")
+    install_package("matplotlib")
+    install_package("streamlit")
+    import pandas
+    import plotly
+    import seaborn
+    import matplotlib
+    import streamlit as st
+
 import plotly.express as px
 import plotly.graph_objects as go
 import seaborn as sns
@@ -9,7 +33,7 @@ import matplotlib.pyplot as plt
 @st.cache_data
 def load_data():
     try:
-        chart_events = pd.read_csv("CHARTEVENTS.csv", nrows=5000)
+        chart_events = pd.read_csv("CHARTEVENTS.csv", nrows=5000)  # Load sample data
         icu_stays = pd.read_csv("ICUSTAYS.csv")
         d_items = pd.read_csv("D_ITEMS.csv")
         return chart_events, icu_stays, d_items
@@ -17,7 +41,7 @@ def load_data():
         st.error(f"Error loading files: {e}")
         return None, None, None
 
-# Load data
+# Load the data
 chart_events, icu_stays, d_items = load_data()
 if chart_events is None or icu_stays is None or d_items is None:
     st.stop()
