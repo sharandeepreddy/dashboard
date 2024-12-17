@@ -1,126 +1,77 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-import seaborn as sns
+import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 
-# Load datasets
-@st.cache_data
-def load_data():
-    try:
-        chart_events = pd.read_csv("CHARTEVENTS.csv", nrows=5000)
-        icu_stays = pd.read_csv("ICUSTAYS.csv")
-        d_items = pd.read_csv("D_ITEMS.csv")
-        return chart_events, icu_stays, d_items
-    except FileNotFoundError as e:
-        st.error(f"Error loading files: {e}")
-        return None, None, None
+# Title and description
+st.title("ICU Ventilation Equipment Dashboard")
+st.write("This dashboard predicts ventilation equipment needs using the MIMIC-III dataset.")
 
-# Load data
-chart_events, icu_stays, d_items = load_data()
-if chart_events is None or icu_stays is None or d_items is None:
-    st.stop()
+# File upload
+st.sidebar.header("Upload Dataset Files")
+chart_file = st.sidebar.file_uploader("Upload CHARTEVENTS.csv", type=['csv'])
+item_file = st.sidebar.file_uploader("Upload D_ITEMS.csv", type=['csv'])
+stay_file = st.sidebar.file_uploader("Upload ICUSTAYS.csv", type=['csv'])
 
-# Merge datasets
-chart_events = chart_events.dropna(subset=["itemid", "valuenum"])  # Drop rows with null measurements
-merged_data = pd.merge(chart_events, icu_stays[['icustay_id', 'subject_id', 'los', 'first_careunit', 'intime']], 
-                       on="icustay_id", how="inner")
-merged_data = pd.merge(merged_data, d_items[['itemid', 'label']], on="itemid", how="inner")
+if chart_file and item_file and stay_file:
+    # Load datasets
+    st.write("### Dataset Loading")
+    chart_event = pd.read_csv(chart_file, usecols=['icustay_id', 'itemid', 'charttime', 'value', 'valuenum', 'valueuom', 'error'])
+    chart_event = chart_event.loc[chart_event['error'] != 1]
+    chart_event.drop(['error'], axis=1, inplace=True)
+    st.write("CHARTEVENTS loaded:", chart_event.head())
 
-# Sidebar Filters
-st.sidebar.title("Filters")
+    d_item = pd.read_csv(item_file)
+    icu_stay = pd.read_csv(stay_file)
 
-# ICU Care Unit Multiselect
-care_unit_filter = st.sidebar.multiselect("Select Care Units", 
-                                          icu_stays["first_careunit"].unique(),
-                                          default=icu_stays["first_careunit"].unique())
+    # Merge datasets
+    ventilation = pd.merge(chart_event, d_item, on='itemid')
+    ventilation = pd.merge(ventilation, icu_stay, on='icustay_id')
 
-# Measurements Multiselect with Safe Defaults
-available_measurements = merged_data["label"].unique()
-default_measurements = available_measurements[:2] if len(available_measurements) > 1 else available_measurements
+    # Feature selection and processing
+    selected = ['Respiratory Rate', 'Heart Rate', 'Non Invasive Blood Pressure mean', 'Non Invasive Blood Pressure diastolic']
+    ventilation = ventilation.loc[ventilation['label'].isin(selected)]
+    ventilation['charttime'] = pd.to_datetime(ventilation['charttime'])
+    ventilation['intime'] = pd.to_datetime(ventilation['intime'])
+    ventilation['icu_time'] = (ventilation['charttime'] - ventilation['intime']).dt.total_seconds() / 3600
+    ventilation.drop(['intime', 'outtime', 'conceptid'], axis=1, inplace=True)
+    ventilation['patient_id'] = np.arange(1, len(ventilation) + 1)
 
-measurement_filter = st.sidebar.multiselect("Select Measurements", 
-                                            available_measurements, 
-                                            default=default_measurements)
+    # Display merged dataset
+    st.write("### Merged Dataset")
+    st.dataframe(ventilation.head())
 
-# Slider for Length of Stay (LOS) Range
-los_range = st.sidebar.slider("Select Length of Stay (LOS) Range", 
-                              int(icu_stays["los"].min()), int(icu_stays["los"].max()), (0, 10))
+    # Handle missing data
+    st.write("### Missing Data Analysis")
+    missing_data = ventilation.isnull().sum()
+    st.write(missing_data)
 
-# Date Range Picker for ICU Admission
-start_date, end_date = st.sidebar.date_input("Select Admission Date Range", 
-                                             [pd.to_datetime("2125-01-01"), pd.to_datetime("2165-01-01")])
+    # Feature engineering
+    ventilation['year'] = ventilation['charttime'].dt.year
+    ventilation['month'] = ventilation['charttime'].dt.month
+    ventilation['day'] = ventilation['charttime'].dt.day
+    ventilation['hour'] = ventilation['charttime'].dt.hour
+    ventilation['minute'] = ventilation['charttime'].dt.minute
+    ventilation['second'] = ventilation['charttime'].dt.second
+    ventilation.drop(['charttime'], axis=1, inplace=True)
 
-# Convert `intime` to datetime and drop invalid rows
-merged_data["intime"] = pd.to_datetime(merged_data["intime"], errors='coerce')
-filtered_data = merged_data.dropna(subset=["intime"])
+    # Visualizations
+    st.write("### Visualizations")
 
-# Convert start_date and end_date to pandas Timestamps
-start_date = pd.Timestamp(start_date)
-end_date = pd.Timestamp(end_date)
+    # Correlation heatmap
+    st.write("Correlation Heatmap")
+    corr = ventilation.corr()
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm")
+    st.pyplot(plt)
 
-# Apply Filters
-filtered_data = filtered_data[
-    (filtered_data["first_careunit"].isin(care_unit_filter)) &
-    (filtered_data["label"].isin(measurement_filter)) &
-    (filtered_data["los"].between(los_range[0], los_range[1])) &
-    (filtered_data["intime"].between(start_date, end_date))
-]
+    # Distribution of ICU times
+    st.write("ICU Time Distribution")
+    plt.figure(figsize=(8, 6))
+    sns.histplot(ventilation['icu_time'], kde=True, bins=30, color='blue')
+    plt.title("ICU Time Distribution")
+    st.pyplot(plt)
 
-# Main Dashboard Title
-st.title("ICU Management Dashboard")
-
-# Metrics
-st.subheader("Key Metrics")
-total_patients = filtered_data["subject_id"].nunique()
-average_los = filtered_data["los"].mean()
-num_measurements = filtered_data["label"].nunique()
-
-col1, col2, col3 = st.columns(3)
-col1.metric("Total Patients", total_patients)
-col2.metric("Average LOS (days)", f"{average_los:.2f}")
-col3.metric("Unique Measurements", num_measurements)
-
-# Pie Chart: ICU Care Unit Distribution
-st.subheader("ICU Care Unit Distribution")
-care_unit_dist = filtered_data["first_careunit"].value_counts().reset_index()
-care_unit_dist.columns = ["Care Unit", "Count"]
-fig_pie = px.pie(care_unit_dist, names="Care Unit", values="Count", title="Care Unit Distribution")
-st.plotly_chart(fig_pie)
-
-# Bar Chart: Top Measurements
-st.subheader("Top 10 Measurements Collected")
-top_measurements = filtered_data["label"].value_counts().nlargest(10).reset_index()
-top_measurements.columns = ["Measurement", "Count"]
-fig_bar = px.bar(top_measurements, x="Measurement", y="Count", title="Top 10 Measurements Collected")
-st.plotly_chart(fig_bar)
-
-# Scatter Plot: LOS vs. Measurement Value
-st.subheader("Length of Stay vs. Measurement Value")
-fig_scatter = px.scatter(filtered_data, x="los", y="valuenum", color="label",
-                         title="Length of Stay vs Measurement Value",
-                         labels={"los": "Length of Stay (days)", "valuenum": "Measurement Value"})
-st.plotly_chart(fig_scatter)
-
-# Correlation Heatmap
-st.subheader("Correlation Heatmap")
-numeric_cols = filtered_data[["los", "valuenum"]].dropna()
-if not numeric_cols.empty:
-    fig, ax = plt.subplots()
-    sns.heatmap(numeric_cols.corr(), annot=True, cmap="coolwarm", ax=ax)
-    st.pyplot(fig)
 else:
-    st.warning("No numerical data available to display the heatmap.")
-
-# Summary Table: ICU Care Unit Summary
-st.subheader("ICU Care Unit Summary")
-icu_summary = filtered_data.groupby("first_careunit").agg(
-    Total_Stays=("icustay_id", "count"),
-    Avg_LOS=("los", "mean")
-).reset_index()
-st.dataframe(icu_summary)
-
-# Filtered Data Preview
-st.write("### Filtered Data Preview")
-st.dataframe(filtered_data.head())
+    st.warning("Please upload all required files.")
