@@ -2,11 +2,12 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import pymysql
 
+# Function to load data from local CSV files
 @st.cache_data
 def load_data():
     try:
+        # Load datasets
         chart_events = pd.read_csv("CHARTEVENTS.csv", nrows=5000)
         icu_stays = pd.read_csv("ICUSTAYS.csv")
         d_items = pd.read_csv("D_ITEMS.csv")
@@ -15,8 +16,13 @@ def load_data():
         st.error(f"Error loading files: {e}")
         return None, None, None
 
-# Merge datasets
-chart_events = chart_events.dropna(subset=["itemid", "valuenum"])  # Remove null measurements
+# Load data
+chart_events, icu_stays, d_items = load_data()
+if chart_events is None or icu_stays is None or d_items is None:
+    st.stop()
+
+# Data Merging and Cleaning
+chart_events = chart_events.dropna(subset=["itemid", "valuenum"])  # Remove rows with null measurements
 merged_data = pd.merge(chart_events, icu_stays[['icustay_id', 'subject_id', 'los', 'first_careunit']], 
                        on="icustay_id", how="inner")
 merged_data = pd.merge(merged_data, d_items[['itemid', 'label']], on="itemid", how="inner")
@@ -29,7 +35,7 @@ care_unit_filter = st.sidebar.multiselect(
     default=icu_stays["first_careunit"].unique()
 )
 
-# Filtered Data
+# Filter Data
 filtered_data = merged_data[merged_data["first_careunit"].isin(care_unit_filter)]
 
 # Main Dashboard Title
@@ -65,15 +71,15 @@ fig_scatter = px.scatter(filtered_data, x="los", y="valuenum", color="label",
                          labels={"los": "Length of Stay (days)", "valuenum": "Measurement Value"})
 st.plotly_chart(fig_scatter)
 
-# Interactive Graph: ICU Time Spent Monitoring Types
-st.subheader("ICU Spent Time with Different Monitoring Type")
-data1 = merged_data.loc[merged_data['label'] == "Heart"]
-data2 = merged_data.loc[merged_data['label'] == "Blood Pressure Diastolic"]
-data3 = merged_data.loc[merged_data['label'] == "Blood Pressure Mean"]
-data4 = merged_data.loc[merged_data['label'] == "Respiratory Rate"]
+# Interactive Graph: ICU Time Monitoring Types
+st.subheader("ICU Spent Time with Different Monitoring Types")
+data1 = filtered_data.loc[filtered_data['label'] == "Heart Rate"]
+data2 = filtered_data.loc[filtered_data['label'] == "Blood Pressure Diastolic"]
+data3 = filtered_data.loc[filtered_data['label'] == "Blood Pressure Mean"]
+data4 = filtered_data.loc[filtered_data['label'] == "Respiratory Rate"]
 
 fig = go.Figure()
-fig.add_trace(go.Scatter(x=list(data1['subject_id']), y=list(data1['valuenum']), name="Heart", line=dict(color="red")))
+fig.add_trace(go.Scatter(x=data1['subject_id'], y=data1['valuenum'], name="Heart Rate", line=dict(color="red")))
 
 fig.update_layout(
     title_text="ICU Spent Time with Different Monitoring Types",
@@ -81,10 +87,14 @@ fig.update_layout(
         dict(
             active=0,
             buttons=list([
-                dict(label="Heart", method="update", args=[{"x": [list(data1['subject_id'])], "y": [list(data1['valuenum'])]}, {"title": "Heart Monitoring"}]),
-                dict(label="Blood Pressure Diastolic", method="update", args=[{"x": [list(data2['subject_id'])], "y": [list(data2['valuenum'])]}, {"title": "Blood Pressure Diastolic"}]),
-                dict(label="Blood Pressure Mean", method="update", args=[{"x": [list(data3['subject_id'])], "y": [list(data3['valuenum'])]}, {"title": "Blood Pressure Mean"}]),
-                dict(label="Respiratory Rate", method="update", args=[{"x": [list(data4['subject_id'])], "y": [list(data4['valuenum'])]}, {"title": "Respiratory Rate"}]),
+                dict(label="Heart Rate", method="update", 
+                     args=[{"x": [data1['subject_id']], "y": [data1['valuenum']]}, {"title": "Heart Rate Monitoring"}]),
+                dict(label="Blood Pressure Diastolic", method="update", 
+                     args=[{"x": [data2['subject_id']], "y": [data2['valuenum']]}, {"title": "Blood Pressure Diastolic"}]),
+                dict(label="Blood Pressure Mean", method="update", 
+                     args=[{"x": [data3['subject_id']], "y": [data3['valuenum']]}, {"title": "Blood Pressure Mean"}]),
+                dict(label="Respiratory Rate", method="update", 
+                     args=[{"x": [data4['subject_id']], "y": [data4['valuenum']]}, {"title": "Respiratory Rate"}]),
             ])
         )
     ]
@@ -98,3 +108,7 @@ icu_summary = icu_stays.groupby("first_careunit").agg(
     Avg_LOS=("los", "mean")
 ).reset_index()
 st.dataframe(icu_summary)
+
+# Filtered Data Preview
+st.subheader("Filtered Data Preview")
+st.dataframe(filtered_data.head())
