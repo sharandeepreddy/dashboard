@@ -46,11 +46,14 @@ care_unit_filter = st.sidebar.multiselect(
     default=icu_stays["first_careunit"].unique()
 )
 
-# Measurement Filter
+# Get the Top 10 most frequent measurements
+top_measurements = merged_data["label"].value_counts().nlargest(10).index
+
+# Multiselect Dropdown with Limited Options
 measurement_filter = st.sidebar.multiselect(
     "Select Measurement Types", 
-    merged_data["label"].unique(), 
-    default=merged_data["label"].unique()[:5]
+    top_measurements, 
+    default=top_measurements[:3]
 )
 
 # LOS Range Slider
